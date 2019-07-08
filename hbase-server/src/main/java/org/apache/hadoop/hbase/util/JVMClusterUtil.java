@@ -172,11 +172,15 @@ public class JVMClusterUtil {
   public static String startup(final List<JVMClusterUtil.MasterThread> masters,
       final List<JVMClusterUtil.RegionServerThread> regionservers) throws IOException {
 
+    Configuration configuration = null;
+
     if (masters == null || masters.isEmpty()) {
       return null;
     }
 
     for (JVMClusterUtil.MasterThread t : masters) {
+      configuration = t.getMaster().getConfiguration();
+
       t.start();
     }
 
@@ -190,8 +194,10 @@ public class JVMClusterUtil {
       } catch (InterruptedException e) {
         throw (InterruptedIOException)new InterruptedIOException().initCause(e);
       }
-      if (System.currentTimeMillis() > startTime + 30000) {
-        throw new RuntimeException("Master not active after 30 seconds");
+      int startTimeout = configuration != null ? Integer.parseInt(
+              configuration.get("hbase.master.start.timeout.localHBaseCluster", "30000")) : 30000;
+      if (System.currentTimeMillis() > startTime + startTimeout) {
+        throw new RuntimeException(String.format("Master not active after %s ms", startTimeout));
       }
     }
 
@@ -204,7 +210,8 @@ public class JVMClusterUtil {
     // Wait for an active master to be initialized (implies being master)
     //  with this, when we return the cluster is complete
     startTime = System.currentTimeMillis();
-    final int maxwait = 200000;
+    final int initTimeout = configuration != null ? Integer.parseInt(
+            configuration.get("hbase.master.init.timeout.localHBaseCluster", "200000")) : 200000;
     while (true) {
       JVMClusterUtil.MasterThread t = findActiveMaster(masters);
       if (t != null && t.master.isInitialized()) {
@@ -218,8 +225,8 @@ public class JVMClusterUtil {
           throw (InterruptedIOException)new InterruptedIOException().initCause(e);
         }
       }
-      if (System.currentTimeMillis() > startTime + maxwait) {
-        String msg = "Master not initialized after " + maxwait + "ms seconds";
+      if (System.currentTimeMillis() > startTime + initTimeout) {
+        String msg = "Master not initialized after " + initTimeout + " ms";
         Threads.printThreadInfo(System.out,
           "Thread dump because: " + msg);
         throw new RuntimeException(msg);
